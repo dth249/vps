@@ -12,28 +12,30 @@ jobs:
       - name: Setup Direct RDP
         shell: powershell
         run: |
-          # 1. Bat Remote Desktop va Firewall
+          # 1. Khong dung tien trinh khi gap warning cua OpenSSH
+          $ErrorActionPreference = "Continue"
+
+          # 2. Bat Remote Desktop va Firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
 
-          # 2. Dat mat khau dang nhap
+          # 3. Dat mat khau dang nhap
           net user runneradmin "MatKhauManh123@"
 
-          # 3. Chay Serveo TCP Tunnel
-          $job = Start-Job -ScriptBlock {
-              ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -R 0:localhost:3389 serveo.net
-          }
+          # 4. Chay Serveo voi cac co tat TTY (-N, -T) va ghi log truc tiep
+          $sshCmd = 'ssh -N -T -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -R 0:localhost:3389 serveo.net'
+          Start-Process cmd.exe -ArgumentList "/c $sshCmd > serveo.log 2>&1"
 
-          # 4. Doc log tu Job de lay IP/Port
+          # 5. Doc IP/Port tu file log
           $addr = ""
           for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 2
-              $output = Receive-Job -Job $job
-              if ($output) {
-                  $match = $output | Select-String -Pattern 'Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)'
-                  if ($match) {
-                      $addr = $match.Matches[0].Groups[1].Value
+              if (Test-Path "serveo.log") {
+                  $content = Get-Content "serveo.log" -Raw
+                  $match = [regex]::Match($content, 'Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)')
+                  if ($match.Success) {
+                      $addr = $match.Groups[1].Value
                       break
                   }
               }
@@ -41,17 +43,17 @@ jobs:
 
           if ($addr) {
               Write-Host "`n=======================================================" -ForegroundColor Green
-              Write-Host "KET NOI THANH CONG! THONG TIN DANG NHAP:" -ForegroundColor Yellow
+              Write-Host "THONG TIN DANG NHAP RDP:" -ForegroundColor Yellow
               Write-Host "Computer (Host:Port) : $addr" -ForegroundColor Cyan
               Write-Host "Username             : runneradmin" -ForegroundColor Yellow
               Write-Host "Password             : MatKhauManh123@" -ForegroundColor Yellow
               Write-Host "=======================================================`n" -ForegroundColor Green
           } else {
-              Write-Host "Output Job:"
-              Receive-Job -Job $job
-              throw "Khong the lay dia chi tu Serveo. Vui long chay lai!"
+              Write-Host "LOG CHI TIET:"
+              Get-Content "serveo.log" -ErrorAction SilentlyContinue
+              throw "Khong the lay thong tin dia chi tu Serveo!"
           }
 
-          # 5. Duy tri ket noi
+          # 6. Giu may hoat dong
           $timeout = 21600
           Start-Sleep -Seconds $timeout
