@@ -10,6 +10,8 @@ jobs:
 
     steps:
       - name: Setup Windows RDP with Tailscale
+        env:
+          TAILSCALE_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         shell: powershell
         run: |
           # 1. Bat Remote Desktop va mo firewall
@@ -20,15 +22,12 @@ jobs:
           # 2. Dat mat khau
           net user runneradmin "MatKhauManh123@"
 
-          # 3. Cai dat va chay Tailscale
+          # 3. Cai dat va nap bien moi truong Tailscale
           choco install tailscale -y --no-progress
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-          # 4. Ket noi mang noi bo bang Auth Key
-          # Thay tskey-auth-xxxx bang Auth Key ban vua lay o Buoc 1
-          $TAILSCALE_KEY = "tskey-auth-kCCda1Pz3V11CNTRL-B3kBeb3KYne5tvUp27fMneJDjiLNKbN8K"
-          
-          tailscale up --authkey $TAILSCALE_KEY --hostname "github-vps" --unattended
+          # 4. Ket noi mang noi bo bang Secret
+          tailscale up --authkey $env:TAILSCALE_KEY --hostname "github-vps" --unattended
 
           # 5. Lay IP Tailscale va in ra man hinh
           Start-Sleep -Seconds 5
