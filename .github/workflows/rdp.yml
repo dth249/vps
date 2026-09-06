@@ -1,4 +1,4 @@
-name: Windows-RDP-Direct
+name: Windows-RDP-Tailscale
 
 on:
   workflow_dispatch:
@@ -9,51 +9,38 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Setup Direct RDP
+      - name: Setup Windows RDP with Tailscale
         shell: powershell
         run: |
-          # 1. Khong dung tien trinh khi gap warning cua OpenSSH
-          $ErrorActionPreference = "Continue"
-
-          # 2. Bat Remote Desktop va Firewall
+          # 1. Bat Remote Desktop va mo firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
 
-          # 3. Dat mat khau dang nhap
+          # 2. Dat mat khau
           net user runneradmin "MatKhauManh123@"
 
-          # 4. Chay Serveo voi cac co tat TTY (-N, -T) va ghi log truc tiep
-          $sshCmd = 'ssh -N -T -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -R 0:localhost:3389 serveo.net'
-          Start-Process cmd.exe -ArgumentList "/c $sshCmd > serveo.log 2>&1"
+          # 3. Cai dat va chay Tailscale
+          choco install tailscale -y --no-progress
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-          # 5. Doc IP/Port tu file log
-          $addr = ""
-          for ($i = 0; $i -lt 30; $i++) {
-              Start-Sleep -Seconds 2
-              if (Test-Path "serveo.log") {
-                  $content = Get-Content "serveo.log" -Raw
-                  $match = [regex]::Match($content, 'Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)')
-                  if ($match.Success) {
-                      $addr = $match.Groups[1].Value
-                      break
-                  }
-              }
-          }
+          # 4. Ket noi mang noi bo bang Auth Key
+          # Thay tskey-auth-xxxx bang Auth Key ban vua lay o Buoc 1
+          $TAILSCALE_KEY = "tskey-auth-kCCda1Pz3V11CNTRL-B3kBeb3KYne5tvUp27fMneJDjiLNKbN8K"
+          
+          tailscale up --authkey $TAILSCALE_KEY --hostname "github-vps" --unattended
 
-          if ($addr) {
-              Write-Host "`n=======================================================" -ForegroundColor Green
-              Write-Host "THONG TIN DANG NHAP RDP:" -ForegroundColor Yellow
-              Write-Host "Computer (Host:Port) : $addr" -ForegroundColor Cyan
-              Write-Host "Username             : runneradmin" -ForegroundColor Yellow
-              Write-Host "Password             : MatKhauManh123@" -ForegroundColor Yellow
-              Write-Host "=======================================================`n" -ForegroundColor Green
-          } else {
-              Write-Host "LOG CHI TIET:"
-              Get-Content "serveo.log" -ErrorAction SilentlyContinue
-              throw "Khong the lay thong tin dia chi tu Serveo!"
-          }
+          # 5. Lay IP Tailscale va in ra man hinh
+          Start-Sleep -Seconds 5
+          $ip = tailscale ip -4
 
-          # 6. Giu may hoat dong
+          Write-Host "`n=======================================================" -ForegroundColor Green
+          Write-Host "KET NOI THANH CONG! THONG TIN DANG NHAP:" -ForegroundColor Yellow
+          Write-Host "Computer (IP Tailscale) : $ip" -ForegroundColor Cyan
+          Write-Host "Username                : runneradmin" -ForegroundColor Yellow
+          Write-Host "Password                : MatKhauManh123@" -ForegroundColor Yellow
+          Write-Host "=======================================================`n" -ForegroundColor Green
+
+          # 6. Duy tri may hoat dong
           $timeout = 21600
           Start-Sleep -Seconds $timeout
