@@ -1,0 +1,42 @@
+name: Windows-RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Setup Ngrok & Enable RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          
+          # Đổi mật khẩu tài khoản runneradmin
+          net user runneradmin "Pillrock06"
+          
+          # Tải và cấu hình Ngrok
+          Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
+          Expand-Archive ngrok.zip
+          ./ngrok/ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          
+          # Khởi chạy tunnel RDP chạy ngầm
+          Start-Process -FilePath "./ngrok/ngrok.exe" -ArgumentList "tcp 3389 --region ap"
+          Start-Sleep -Seconds 5
+          
+          # Lấy IP/Port Public
+          $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+          $tunnel = $response.tunnels[0].public_url
+          Write-Host "==========================================" -ForegroundColor Green
+          Write-Host "RDP Address: $tunnel" -ForegroundColor Yellow
+          Write-Host "User: runneradmin" -ForegroundColor Yellow
+          Write-Host "Password: MatKhauManh123@" -ForegroundColor Yellow
+          Write-Host "==========================================" -ForegroundColor Green
+
+      - name: Keep Alive (6 Hours)
+        run: |
+          $timeout = 21600
+          Start-Sleep -Seconds $timeout
