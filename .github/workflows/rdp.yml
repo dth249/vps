@@ -9,10 +9,10 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Setup Direct RDP via Pinggy
+      - name: Setup Direct RDP
         shell: powershell
         run: |
-          # 1. Bat Remote Desktop va mo tuong lua
+          # 1. Bat Remote Desktop va Firewall
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
@@ -20,34 +20,36 @@ jobs:
           # 2. Dat mat khau dang nhap
           net user runneradmin "MatKhauManh123@"
 
-          # 3. Chay tunnel TCP qua Pinggy bang SSH (khong can dang ky, khong can token)
-          $cmd = 'ssh -p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=30 a.pinggy.io'
-          Start-Process powershell -ArgumentList "-Command `"$cmd | Tee-Object -FilePath pinggy.log`""
+          # 3. Chay Serveo TCP Tunnel
+          $job = Start-Job -ScriptBlock {
+              ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -R 0:localhost:3389 serveo.net
+          }
 
-          # 4. Cho lay dia chi ket noi truc tiep
-          $found = $false
-          for ($i = 0; $i -lt 25; $i++) {
+          # 4. Doc log tu Job de lay IP/Port
+          $addr = ""
+          for ($i = 0; $i -lt 30; $i++) {
               Start-Sleep -Seconds 2
-              if (Test-Path "pinggy.log") {
-                  $content = Get-Content "pinggy.log"
-                  $match = $content | Select-String -Pattern 'tcp://([a-zA-Z0-9\.\-]+):([0-9]+)'
+              $output = Receive-Job -Job $job
+              if ($output) {
+                  $match = $output | Select-String -Pattern 'Forwarding TCP traffic from ([a-zA-Z0-9\.\-]+:[0-9]+)'
                   if ($match) {
-                      $addr = $match.Matches[0].Groups[1].Value + ":" + $match.Matches[0].Groups[2].Value
-                      Write-Host "`n=======================================================" -ForegroundColor Green
-                      Write-Host "THONG TIN DANG NHAP RDP:" -ForegroundColor Yellow
-                      Write-Host "Computer (IP/Host) : $addr" -ForegroundColor Cyan
-                      Write-Host "Username           : runneradmin" -ForegroundColor Yellow
-                      Write-Host "Password           : MatKhauManh123@" -ForegroundColor Yellow
-                      Write-Host "=======================================================`n" -ForegroundColor Green
-                      $found = $true
+                      $addr = $match.Matches[0].Groups[1].Value
                       break
                   }
               }
           }
 
-          if (-not $found) {
-              Write-Host "LOG PINGGY:"
-              Get-Content "pinggy.log" -ErrorAction SilentlyContinue
+          if ($addr) {
+              Write-Host "`n=======================================================" -ForegroundColor Green
+              Write-Host "KET NOI THANH CONG! THONG TIN DANG NHAP:" -ForegroundColor Yellow
+              Write-Host "Computer (Host:Port) : $addr" -ForegroundColor Cyan
+              Write-Host "Username             : runneradmin" -ForegroundColor Yellow
+              Write-Host "Password             : MatKhauManh123@" -ForegroundColor Yellow
+              Write-Host "=======================================================`n" -ForegroundColor Green
+          } else {
+              Write-Host "Output Job:"
+              Receive-Job -Job $job
+              throw "Khong the lay dia chi tu Serveo. Vui long chay lai!"
           }
 
           # 5. Duy tri ket noi
